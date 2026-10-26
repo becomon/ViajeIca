@@ -1,6 +1,13 @@
 const $=s=>document.querySelector(s), dates=['2027-03-05','2027-03-06','2027-03-07','2027-03-08'], days=['Viernes','Sábado','Domingo','Lunes'], categories=['Paseo','Comida','Transporte','Descanso','Otro'];
 const money=n=>new Intl.NumberFormat('es-PE',{style:'currency',currency:'PEN'}).format(n), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let events={}, people=4, cloud=null, room=new URLSearchParams(location.hash.slice(1)).get('grupo'), ready=!room, timer;
+// Recupera el último grupo conectado si se abre la dirección sin fragmento.
+const lastRoomKey='escapada-2027-last-room';
+if(!room){try{const savedRoom=localStorage.getItem(lastRoomKey);if(/^[a-f0-9-]{36}$/.test(savedRoom||'')){room=savedRoom;ready=false;history.replaceState(null,'',location.pathname+location.search+'#grupo='+room)}}catch{}}
+function groupUI(){
+ $('#settings').textContent=room?'↗ Mi grupo':'⚙ Conectar grupo';
+ $('#createRoom').textContent=room?'Abrir mi grupo ↗':'Crear grupo compartido ↗';
+}
 function toast(s){$('#toast').textContent=s;$('#toast').classList.add('show');clearTimeout(timer);timer=setTimeout(()=>$('#toast').classList.remove('show'),3500)}
 function valid(e){return e&&typeof e.title==='string'&&e.title.trim().length>0&&e.title.length<=100&&dates.includes(e.date)&&categories.includes(e.category)&&/^([01]\d|2[0-3]):[0-5]\d$/.test(e.start)&&/^([01]\d|2[0-3]):[0-5]\d$/.test(e.end)&&e.end>e.start&&typeof e.cost==='number'&&Number.isFinite(e.cost)&&e.cost>=0&&e.cost<=1000000&&typeof e.done==='boolean'&&['location','participants','notes'].every(k=>typeof e[k]==='string'&&e[k].length<=(k==='notes'?2000:200))}
 function persist(){try{localStorage.setItem('escapada-2027-v2',JSON.stringify({events,people}))}catch{toast('No se pudo guardar en este navegador. Exporta una copia.')}}
@@ -30,7 +37,7 @@ $('#createRoom').onclick=async()=>{
   $('#connection').close();
   toast('Grupo conectado. Usa Compartir para invitar.');
  }catch(error){$('#connectionError').textContent=authError(error)}
- finally{button.disabled=false;button.textContent=label}
+ finally{button.disabled=false;button.textContent=label;groupUI()}
 };
 
 let sdkPromise, stopRoom, stopConnection;
@@ -69,6 +76,8 @@ async function connect(){
  if(!user.emailVerified){if(!$('#login').open)$('#login').showModal();message('Verifica tu correo con el enlace recibido y pulsa Ya verifiqué.');throw Error('Falta verificar tu correo.')}
  cloud={...db,db:db.getDatabase(instance)};
  await new Promise((resolve,reject)=>{stopRoom=db.onValue(db.ref(cloud.db,'rooms/'+room),snap=>{const data=snap.val()||{};events=Object.fromEntries(Object.entries(data.events||{}).filter(([id,e])=>/^[\w-]+$/.test(id)&&valid(e)));people=Number.isInteger(data.people)&&data.people>=1&&data.people<=100?data.people:4;ready=true;render();resolve()},()=>{ready=false;events={};render();$('#status').textContent='● Sin acceso';$('#notice').textContent='Tu cuenta no tiene acceso. Pide al organizador que autorice tu UID en Firebase.';reject(Error('Cuenta sin autorización. Pide al organizador que agregue tu UID en allowedUsers: '+user.uid))})});
+ try{localStorage.setItem(lastRoomKey,room)}catch{}
+ groupUI();
  stopConnection=db.onValue(db.ref(cloud.db,'.info/connected'),snap=>{$('#status').textContent=snap.val()?'● Grupo conectado':'● Sin conexión';$('#notice').textContent=snap.val()?'Cambios compartidos en tiempo real · Solo cuentas verificadas y autorizadas.':'Sin conexión. Los cambios pendientes se enviarán al reconectar.'});
 }
 $('#account').onclick=async()=>{
@@ -84,4 +93,6 @@ $('#verify').onclick=()=>loginAction(async()=>{const {auth,session}=await sdk();
 $('#refreshAccount').onclick=()=>loginAction(async()=>{const {auth,session}=await sdk();if(!session.currentUser||session.currentUser.isAnonymous)throw Error('Primero inicia sesión.');await auth.reload(session.currentUser);await auth.getIdToken(session.currentUser,true);await afterLogin()});
 $('#resetPassword').onclick=()=>loginAction(async()=>{if(!$('#email').reportValidity())return;const {auth,session}=await sdk();await auth.sendPasswordResetEmail(session,$('#email').value.trim());message('Si existe una cuenta con ese correo, recibirás instrucciones para recuperar el acceso.')});
 $('#logout').onclick=()=>loginAction(async()=>{const {auth,session}=await sdk();disconnect();await auth.signOut(session);renderAccount(null);$('#editor').close();$('#account').textContent='Ingresar con correo';message('Sesión cerrada.');$('#notice').textContent='Inicia sesión para volver a abrir el grupo.'});
-render();if(room)connect().catch(e=>{$('#status').textContent='● Sin conectar';$('#notice').textContent=authError(e)});
+groupUI();render();if(room)connect().catch(e=>{$('#status').textContent='● Sin conectar';$('#notice').textContent=authError(e)});
+
+$('#homeBrand').onclick=e=>{e.preventDefault();window.scrollTo({top:0,behavior:'smooth'})};
