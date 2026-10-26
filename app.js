@@ -19,7 +19,19 @@ $('[data-view="calendar"]').onclick=$('[data-view="list"]').onclick=e=>{document
 $('#export').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify({version:1,people,events},null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='escapada-marzo-2027.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
 $('#import').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(!ready||file.size>2000000)throw Error();const data=JSON.parse(await file.text()),list=Object.values(data.events||{});if(!list.length||list.length>500||!list.every(valid))throw Error();if(!confirm(`¿Agregar ${list.length} actividades? Se conservarán las actuales.`))return;const additions=Object.fromEntries(list.map(v=>[crypto.randomUUID(),v]));if(cloud)await cloud.update(cloud.ref(cloud.db,`rooms/${room}/events`),additions);else{Object.assign(events,additions);persist();render()}toast('Actividades importadas')}catch{toast('No se pudo importar. Revisa el archivo y la conexión.')}finally{e.target.value=''}};
 $('#share').onclick=async()=>{if(!room){$('#connection').showModal();return}if(!ready)return toast('El grupo todavía no está conectado.');try{await navigator.clipboard.writeText(location.href);toast('Enlace copiado. Envíalo a tus amigos.')}catch{prompt('Copia este enlace para tus amigos:',location.href)}};
-$('#createRoom').onclick=async()=>{if(!window.FIREBASE_CONFIG){$('#connectionError').textContent='Primero configura Firebase en config.js. Encontrarás los pasos en README.md.';return}const button=$('#createRoom');button.disabled=true;try{if(room){await connect();return}room=crypto.randomUUID();location.hash='grupo='+room;await connect();$('#connection').close();toast('Grupo creado. Usa Compartir para invitar.')}catch{$('#connectionError').textContent='No se pudo conectar. Revisa Firebase, el acceso con correo y las reglas.'}finally{button.disabled=false}};
+$('#createRoom').onclick=async()=>{
+ const button=$('#createRoom'),label=button.textContent;
+ $('#connectionError').textContent='';
+ if(!window.FIREBASE_CONFIG){$('#connectionError').textContent='Primero configura Firebase en config.js.';return}
+ button.disabled=true;button.textContent='Conectando…';
+ try{
+  if(!room){room=crypto.randomUUID();location.hash='grupo='+room}
+  await connect();
+  $('#connection').close();
+  toast('Grupo conectado. Usa Compartir para invitar.');
+ }catch(error){$('#connectionError').textContent=authError(error)}
+ finally{button.disabled=false;button.textContent=label}
+};
 
 let sdkPromise, stopRoom, stopConnection;
 async function sdk(){
@@ -28,6 +40,21 @@ async function sdk(){
  return sdkPromise;
 }
 function authError(e){const messages={'auth/invalid-credential':'Correo o contraseña incorrectos.','auth/email-already-in-use':'Ese correo ya tiene cuenta. Intenta entrar o recupera la contraseña.','auth/weak-password':'Usa una contraseña de al menos 6 caracteres.','auth/invalid-email':'Revisa el correo.','auth/too-many-requests':'Demasiados intentos. Espera antes de reintentar.','auth/operation-not-allowed':'Habilita Correo electrónico/contraseña en Firebase Authentication.','auth/network-request-failed':'No hay conexión con Firebase.'};return messages[e.code]||e.message||'No se pudo completar la operación.'}
+function renderAccount(user){
+ const signed=!!user&&!user.isAnonymous,verified=signed&&user.emailVerified;
+ $('#loginForm').hidden=signed;
+ $('#accountSummary').hidden=!signed;
+ $('#accountHelp').hidden=verified;
+ $('#accountHelp').textContent=signed?'Verifica tu correo con el enlace recibido. Después pulsa Ya verifiqué.':'Entra con tu correo y contraseña. Para ver los planes debes verificar tu correo y el organizador debe autorizar tu cuenta.';
+ $('#accountEmail').textContent=signed?user.email:'';
+ $('#accountUid').textContent=signed?user.uid:'';
+ $('#verify').hidden=!signed||verified;
+ $('#refreshAccount').hidden=!signed||verified;
+ $('#resetPassword').hidden=signed;
+ $('#logout').hidden=!signed;
+ $('#account').textContent=signed?'Mi cuenta':'Ingresar con correo';
+ if(signed)$('#password').value='';
+}
 function message(s){$('#authMessage').textContent=s}
 function disconnect(){if(stopRoom)stopRoom();if(stopConnection)stopConnection();stopRoom=stopConnection=null;cloud=null;ready=!room;if(room){events={};people=4;render()}$('#status').textContent=room?'● Sesión pendiente':'● Modo local'}
 async function connect(){
@@ -35,21 +62,26 @@ async function connect(){
  const {auth,db,session,instance}=await sdk();
  if(!/^[a-f0-9-]{36}$/.test(room))throw Error('El enlace del grupo no es válido.');
  const user=session.currentUser;
+ renderAccount(user);
  if(!user||user.isAnonymous){if(!$('#login').open)$('#login').showModal();message('Entra con tu correo para abrir el grupo.');throw Error('Debes iniciar sesión con correo.')}
- await auth.reload(user);await auth.getIdToken(user,true);
+ await auth.reload(user);await auth.getIdToken(user,true);renderAccount(user);
  $('#account').textContent='Mi cuenta';
  if(!user.emailVerified){if(!$('#login').open)$('#login').showModal();message('Verifica tu correo con el enlace recibido y pulsa Ya verifiqué.');throw Error('Falta verificar tu correo.')}
  cloud={...db,db:db.getDatabase(instance)};
  await new Promise((resolve,reject)=>{stopRoom=db.onValue(db.ref(cloud.db,'rooms/'+room),snap=>{const data=snap.val()||{};events=Object.fromEntries(Object.entries(data.events||{}).filter(([id,e])=>/^[\w-]+$/.test(id)&&valid(e)));people=Number.isInteger(data.people)&&data.people>=1&&data.people<=100?data.people:4;ready=true;render();resolve()},()=>{ready=false;events={};render();$('#status').textContent='● Sin acceso';$('#notice').textContent='Tu cuenta no tiene acceso. Pide al organizador que autorice tu UID en Firebase.';reject(Error('Cuenta sin autorización. Pide al organizador que agregue tu UID en allowedUsers: '+user.uid))})});
  stopConnection=db.onValue(db.ref(cloud.db,'.info/connected'),snap=>{$('#status').textContent=snap.val()?'● Grupo conectado':'● Sin conexión';$('#notice').textContent=snap.val()?'Cambios compartidos en tiempo real · Solo cuentas verificadas y autorizadas.':'Sin conexión. Los cambios pendientes se enviarán al reconectar.'});
 }
-$('#account').onclick=async()=>{$('#login').showModal();try{const {session}=await sdk();message(session.currentUser&&!session.currentUser.isAnonymous?'Sesión: '+session.currentUser.email+' · UID: '+session.currentUser.uid:'Inicia sesión o crea una cuenta.')}catch(e){message(authError(e))}};
+$('#account').onclick=async()=>{
+ renderAccount(null);message('Cargando cuenta…');$('#login').showModal();
+ try{const {auth,session}=await sdk();if(session.currentUser)await auth.reload(session.currentUser);renderAccount(session.currentUser);message('')}
+ catch(e){message(authError(e))}
+};
 async function loginAction(action){const buttons=$('#login').querySelectorAll('button');buttons.forEach(b=>b.disabled=true);try{await action()}catch(e){message(authError(e))}finally{buttons.forEach(b=>b.disabled=false)}}
-async function afterLogin(){const {session}=await sdk();const user=session.currentUser;$('#password').value='';$('#account').textContent='Mi cuenta';if(!user.emailVerified){message('Revisa tu correo (también spam) y verifica tu cuenta. Después pulsa Ya verifiqué.');return}if(room){await connect();$('#login').close();$('#connection').close();toast('Conectado al grupo')}else{message('Sesión iniciada. Pulsa Conectar grupo para crear un grupo o abre el enlace de tus amigos.')}}
+async function afterLogin(){const {session}=await sdk();const user=session.currentUser;renderAccount(user);$('#password').value='';$('#account').textContent='Mi cuenta';if(!user.emailVerified){message('Revisa tu correo (también spam) y verifica tu cuenta. Después pulsa Ya verifiqué.');return}if(room){await connect();$('#login').close();$('#connection').close();toast('Conectado al grupo')}else{message('');$('#notice').textContent='Sesión iniciada. Usa Conectar grupo o abre el enlace de tus amigos.'}}
 $('#loginForm').onsubmit=e=>{e.preventDefault();loginAction(async()=>{const {auth,session}=await sdk();await auth.signInWithEmailAndPassword(session,$('#email').value.trim(),$('#password').value);await afterLogin()})};
 $('#register').onclick=()=>loginAction(async()=>{if(!$('#loginForm').reportValidity())return;const {auth,session}=await sdk();const result=await auth.createUserWithEmailAndPassword(session,$('#email').value.trim(),$('#password').value);await auth.sendEmailVerification(result.user);await afterLogin()});
 $('#verify').onclick=()=>loginAction(async()=>{const {auth,session}=await sdk();if(!session.currentUser||session.currentUser.isAnonymous)throw Error('Primero entra o crea una cuenta.');await auth.sendEmailVerification(session.currentUser);message('Correo de verificación enviado. Revisa también spam.')});
 $('#refreshAccount').onclick=()=>loginAction(async()=>{const {auth,session}=await sdk();if(!session.currentUser||session.currentUser.isAnonymous)throw Error('Primero inicia sesión.');await auth.reload(session.currentUser);await auth.getIdToken(session.currentUser,true);await afterLogin()});
 $('#resetPassword').onclick=()=>loginAction(async()=>{if(!$('#email').reportValidity())return;const {auth,session}=await sdk();await auth.sendPasswordResetEmail(session,$('#email').value.trim());message('Si existe una cuenta con ese correo, recibirás instrucciones para recuperar el acceso.')});
-$('#logout').onclick=()=>loginAction(async()=>{const {auth,session}=await sdk();disconnect();await auth.signOut(session);$('#editor').close();$('#account').textContent='Ingresar con correo';message('Sesión cerrada.');$('#notice').textContent='Inicia sesión para volver a abrir el grupo.'});
+$('#logout').onclick=()=>loginAction(async()=>{const {auth,session}=await sdk();disconnect();await auth.signOut(session);renderAccount(null);$('#editor').close();$('#account').textContent='Ingresar con correo';message('Sesión cerrada.');$('#notice').textContent='Inicia sesión para volver a abrir el grupo.'});
 render();if(room)connect().catch(e=>{$('#status').textContent='● Sin conectar';$('#notice').textContent=authError(e)});
