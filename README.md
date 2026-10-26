@@ -1,55 +1,34 @@
-# Escapada · Vacaciones del 5 al 8 de marzo de 2026
+# Viaje Ica · 5 al 8 de marzo de 2027
 
-Frontend estático, sin instalación ni compilación. HTML, CSS y JavaScript.
+Frontend estático para GitHub Pages. Sube estos archivos a la raíz del repositorio y configura Pages con main / (root). No necesita compilación.
 
-## Publicar en GitHub Pages
+## Configurar el acceso privado por correo
 
-1. Crea un repositorio en GitHub.
-2. Sube **el contenido de esta carpeta** a la raíz del repositorio: index.html debe quedar en la raíz.
-3. En Settings → Pages → Build and deployment, elige Deploy from a branch.
-4. Selecciona main y / (root), guarda y espera a que termine el despliegue.
-5. Abre el enlace que muestra GitHub Pages.
+1. Conserva tu configuración web de Firebase en config.js, incluyendo databaseURL.
+2. Firebase → Authentication → Método de acceso: habilita Correo electrónico/contraseña. No hace falta habilitar enlace sin contraseña. Desactiva Anónimo si lo habías activado.
+3. Reemplaza las reglas en Realtime Database → Reglas por database.rules.json y pulsa Publicar. Las reglas antiguas permiten acceso anónimo: es necesario reemplazarlas para activar la protección nueva.
+4. Sube los cambios del proyecto a GitHub y espera el despliegue.
+5. En la página, cada viajero pulsa Ingresar con correo → Crear cuenta. Cada uno usa su propia contraseña y verifica el correo recibido. Luego pulsa Ya verifiqué / Reintentar. No compartan contraseñas.
+6. El organizador abre Firebase → Authentication → Usuarios. Copia el UID de cada cuenta aprobada, incluida la suya.
+7. En Realtime Database → Datos, añade un nodo en la raíz llamado allowedUsers. Dentro agrega cada UID como clave, y el valor booleano true (sin comillas). Ejemplo:
 
-No necesitas npm, servidor propio ni claves de GitHub. También puedes usar cualquier hosting estático. Para probar localmente, sirve esta carpeta con un servidor HTTP (por ejemplo `npx serve .`).
+    {"allowedUsers":{"UID_DEL_ORGANIZADOR":true,"UID_DEL_AMIGO":true}}
 
-## Editar entre amigos (Firebase)
+   Añade el nodo desde el botón +. No importes ese ejemplo sobre la raíz: podría reemplazar planes existentes. Ningún cliente web puede modificar allowedUsers; solo el administrador desde la consola.
+8. Cada usuario autorizado puede pulsar Ya verifiqué / Reintentar. El organizador crea un grupo desde Conectar grupo y comparte el enlace completo con #grupo=... Los demás abren ese mismo enlace e inician sesión.
 
-GitHub Pages sirve los archivos, pero no almacena los cambios compartidos. Para eso esta aplicación incluye una conexión a Firebase Realtime Database.
+Tener el enlace ya no basta: Firebase exige identidad autenticada, correo verificado y UID aprobado. La lista de cuentas aprobadas aplica a todos los grupos de este proyecto; esta aplicación está pensada para un solo grupo de viajeros. Para quitar acceso, elimina su UID de allowedUsers; los cambios pendientes que ya fueron leídos o exportados no se pueden recuperar.
 
-1. Crea un proyecto en https://console.firebase.google.com/ y registra una aplicación web.
-2. En Authentication → Sign-in method habilita Anonymous (anónimo).
-3. Crea una Realtime Database. Copia su URL exacta, incluida la región si corresponde.
-4. En la pestaña Rules de la base de datos, pega el contenido de database.rules.json y publícalo. No dejes reglas abiertas de modo de prueba.
-5. En config.js reemplaza null por el objeto de configuración web que te da Firebase. Incluye apiKey, authDomain, databaseURL y projectId. Es configuración pública del cliente: nunca pegues una cuenta de servicio ni una clave privada.
-6. Sube el config.js actualizado a GitHub y espera el despliegue.
-7. En la página, pulsa Conectar grupo → Crear grupo compartido y luego Compartir. Todos deben abrir **el mismo enlace completo**, incluido #grupo=...
+Registrar una cuenta no la autoriza automáticamente. Si aparece permiso denegado, revisa que el correo esté verificado, que el UID tenga true y que las reglas nuevas estén publicadas. No uses reglas públicas de prueba.
 
-Cualquiera que posea el enlace del grupo puede leer, agregar, modificar y eliminar actividades. El identificador aleatorio del enlace funciona como invitación; no compartas ese enlace públicamente. No hay roles ni expulsión de miembros en esta versión. Las reglas impiden listar todos los grupos desde la raíz. Para usar listas de invitados individuales se necesitaría ampliar el sistema de acceso.
+## Uso
 
-El modo local solo guarda datos en ese navegador. Los grupos comienzan vacíos; exporta los planes locales e impórtalos desde el grupo para transferirlos. Cada actividad se guarda por separado para no sobrescribir cambios de otras actividades. Si dos personas editan la misma actividad, prevalece el último guardado. El número de viajeros se comparte con el grupo. Los costos se introducen como costo TOTAL de la actividad, en soles, y se dividen equitativamente entre los viajeros.
+Crear, editar, eliminar, completar y mover actividades entre los cuatro días. Incluye costos totales en soles, reparto equitativo entre viajeros, notas, lugar, participantes, búsqueda, filtros y vista de lista. Las superposiciones se advierten pero se permiten. En celular cambia el día desde el formulario; en escritorio también puedes arrastrar.
 
-## Funciones
+Los planes sin grupo se guardan solo en el navegador. Para transferirlos, exporta e importa desde el grupo. La importación agrega actividades. Dos personas editando la misma actividad: prevalece el último guardado. Los totales incluyen todos los planes, aunque haya filtros activos.
 
-- Crear, editar y eliminar actividades con horario, costo, categoría, lugar, participantes y notas.
-- Cuatro días fijos: jueves 5 a domingo 8 de marzo de 2026.
-- Arrastrar bloques entre días en escritorio; en celular usa el selector de día al editar.
-- Duración, avisos de superposición, actividades completadas.
-- Calendario y lista, búsqueda y filtros.
-- Totales y costo por persona automáticos (sobre todos los planes, independientemente del filtro).
-- Exportación JSON e importación que agrega actividades sin borrar las existentes.
-- Diseño adaptable, navegación con teclado y animaciones que respetan movimiento reducido.
+Los datos locales de la antigua agenda de 2026 no se trasladan automáticamente a 2027. Los planes antiguos de grupos también requieren exportación y cambio explícito de fechas antes de importar; no se modifica silenciosamente su información en Firebase.
 
-No se incluyen actividades de ejemplo ni costos inventados: arma tu propia agenda.
+Las contraseñas las gestiona Firebase Authentication; no se guardan en los archivos del proyecto. config.js contiene configuración pública web, nunca cuentas de servicio. No publiques enlaces de grupos ni exportaciones personales en el repositorio.
 
-## Archivos
-
-- index.html: interfaz.
-- style.css: diseño y estilos adaptables.
-- app.js: calendario, almacenamiento e integración opcional.
-- config.js: configuración pública de Firebase.
-- database.rules.json: reglas que debes publicar en Firebase, no se aplican por subirlas a GitHub.
-- .nojekyll: permite servir el frontend directamente en GitHub Pages.
-
-La sincronización necesita conexión a Internet y Firebase configurado. Las fuentes de Google son opcionales; si no cargan, se usan fuentes del sistema. Verifica cuotas y uso de tu proyecto Firebase en su consola.
-
-Documentación oficial: https://firebase.google.com/docs/database/web/start y https://firebase.google.com/docs/database/security
+Documentación: https://firebase.google.com/docs/auth/web/password-auth y https://firebase.google.com/docs/database/security
